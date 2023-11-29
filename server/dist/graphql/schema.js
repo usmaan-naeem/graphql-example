@@ -18,10 +18,11 @@ export const typeDefs = gql `
     post(id: ID!): Post
     users: [User]
     user(id: ID!): User
+    searchPosts(query: String!): [Post]
   }
 
   type Mutation {
-    createPost(title: String!, content: String): Post
+    createPost(title: String!, content: String, userId: ID!): Post
     updatePost(id: ID!, title: String, content: String): Post
     deletePost(id: ID!): String
     createUser(username: String!, passwordHash: String!): User

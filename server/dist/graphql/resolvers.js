@@ -1,9 +1,10 @@
+import esClient from "../elastic/client.js";
 import Post from "../models/Post.js";
 import User from "../models/User.js";
 export const resolvers = {
     Query: {
         async posts() {
-            return await Post.find({}).populate('user');
+            return await Post.find({}).populate("user");
         },
         async post(_, args) {
             const post = await Post.findById(args.id).populate("user");
@@ -14,6 +15,25 @@ export const resolvers = {
                 title: post.title,
                 content: post.content || "",
             };
+        },
+        async searchPosts(_, { query }) {
+            const response = await esClient.search({
+                index: 'posts',
+                body: {
+                    query: {
+                        multi_match: {
+                            query,
+                            fields: ['title', 'content']
+                        }
+                    }
+                }
+            });
+            const postIds = response.hits.hits.map(hit => hit._id);
+            // Fetch the complete post details from MongoDB using the IDs
+            const posts = await Post.find({
+                '_id': { $in: postIds }
+            }).populate('user');
+            return posts;
         },
         async users() {
             return await User.find({}).populate("posts");
@@ -37,15 +57,39 @@ export const resolvers = {
                 user: args.userId,
             });
             await newPost.save();
+            // Index in Elasticsearch
+            await esClient.index({
+                index: "posts",
+                id: newPost._id.toString(),
+                body: {
+                    title: args.title,
+                    content: args.content,
+                    userId: args.userId,
+                },
+            });
             // Optionally populate the user data
-            await newPost.populate('user');
-            return newPost.toObject();
+            await newPost.populate("user");
+            return newPost;
         },
         async updatePost(_, args) {
-            return await Post.findByIdAndUpdate(args.id, args, { new: true });
+            const post = await Post.findByIdAndUpdate(args.id, args, { new: true });
+            // Update post in Elasticsearch
+            await esClient.update({
+                index: "posts",
+                id: args.id,
+                body: {
+                    doc: args,
+                },
+            });
+            return post;
         },
         async deletePost(_, args) {
             await Post.findByIdAndDelete(args.id);
+            // Delete post in Elasticsearch
+            await esClient.delete({
+                index: "posts",
+                id: args.id,
+            });
             return "Post deleted";
         },
         async createUser(_, args) {
@@ -59,6 +103,6 @@ export const resolvers = {
         },
         async updateUser(_, args) {
             return await User.findByIdAndUpdate(args.id, args, { new: true });
-        }
+        },
     },
 };
